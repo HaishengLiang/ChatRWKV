@@ -29,22 +29,35 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 ########################################################################################################
 #
-# use '/' in model path, instead of '\'
+# Use '/' in model path, instead of '\'
 #
-# can split the model to two devices (cpu/cuda/cuda:0/cuda:1/...) and set dtype for each of them
-# the first [DEVICE_1_NUMBER_OF_LAYERS] layers goes to [DEVICE_1]
+# fp16 = good for GPU (!!! DOES NOT support CPU !!!)
+# fp32 = good for CPU
+# bf16 = worse accuracy, supports CPU
 #
-# fp16 - good for GPU, DOES NOT support CPU
-# fp32 - good for CPU
-# bf16 - worse accuracy, supports CPU
+# Strategy examples: (device = cpu/cuda/cuda:0/cuda:1/...)
+# Here we consider [ln_out+head] to be an extra layer, so L12-D768 model has "13" layers, L24-D2048 model has "25" layers, etc.
+#
+# 'cpu fp32' = everything on cpu fp32
+# 'cuda fp16' = everything on cuda fp16
+#
+# 'cuda fp16 *6 -> cpu fp32' = first 6 layers on cuda fp16, then on cpu fp32
+# 'cuda:0 fp16 *10 -> cuda:1 fp16 *8 -> cpu fp32' = first 10 layers on cuda:0 fp16, then 8 layers on cuda:1 fp16, then on cpu fp32
+#
+# Use '+' for STREAM mode (do it on your fastest GPU), requires some VRAM to store streamed layers
+# 'cuda fp16 *6+' = first 6 layers on cuda fp16, then stream the rest on it
+# (for best speed: try *1+ *2+ *3+ ... until you run out of VRAM)
+#
+# Extreme STREAM: 3G VRAM is enough to run RWKV 14B (slow. will be faster in future)
+# 'cuda fp16 *0+ -> cpu fp32 *1' = stream all layers on cuda fp16, then [ln_out+head] on cpu fp32
 #
 ########################################################################################################
 
-args.DEVICE_1 = "cuda" # cpu/cuda/cuda:0/cuda:1/...
-args.DTYPE_1 = "fp16"  # fp16/fp32/bf16
-args.DEVICE_2 = "cpu" # cpu/cuda/cuda:0/cuda:1/...
-args.DTYPE_2 = "fp32"  # fp16/fp32/bf16
-args.DEVICE_1_NUMBER_OF_LAYERS = 16 # can split the model if less than the number of layers
+# args.strategy = 'cpu fp32'
+args.strategy = 'cuda fp16'
+# args.strategy = 'cuda fp16 *8 -> cpu fp32'
+# args.strategy = 'cuda fp16 *6+'
+# args.strategy = 'cuda fp16 *0+ -> cpu fp32 *1'
 
 os.environ["RWKV_JIT_ON"] = '1' # '1' or '0', please use torch 1.13+ and benchmark speed
 
@@ -71,7 +84,7 @@ elif CHAT_LANG == 'Chinese': # testNovel系列是网文模型，请只用 +gen �
     # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-1b5/RWKV-4-Pile-1B5-EngChn-testNovel-671-ctx2048-20230216'
     # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/7-run1z/rwkv-837'
     # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/3-run1z/rwkv-711'
-    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/1.5-run1z/rwkv-671'
+    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/1.5-run1z/rwkv-2094'
 
 args.ctx_len = 1024
 
@@ -86,32 +99,20 @@ AVOID_REPEAT = '，。：？！'
 
 ########################################################################################################
 
-print(f'\n{CHAT_LANG} - {args.DEVICE_1} {args.DTYPE_1} & {args.DEVICE_2} {args.DTYPE_2} (split at {args.DEVICE_1_NUMBER_OF_LAYERS}) - QA_PROMPT {QA_PROMPT}')
+print(f'\n{CHAT_LANG} - {args.strategy} - QA_PROMPT {QA_PROMPT}')
 from rwkv.model import RWKV
-from rwkv.utils import TOKENIZER
-tokenizer = TOKENIZER("20B_tokenizer.json")
+from rwkv.utils import PIPELINE
 
-args.vocab_size = 50277
-args.head_qk = 0
-args.pre_ffn = 0
-args.grad_cp = 0
-args.my_pos_emb = 0
 MODEL_NAME = args.MODEL_NAME
 
 if CHAT_LANG == 'English':
     interface = ":"
 
     if QA_PROMPT:
-        user = "Q"
-        bot = "A"
-        intro = f'The following is a verbose and detailed Q & A conversation of factual information.'
-    else:
         user = "User"
-        bot = "Bot"
-        intro = f'The following is a verbose and detailed conversation between an AI assistant called {bot}, and a human user called {user}. {bot} is intelligent, knowledgeable, wise and polite.'
-    
-    init_prompt = f'''
-{intro}
+        bot = "Bot" # Or: 'The following is a verbose and detailed Q & A conversation of factual information.'
+        init_prompt = f'''
+The following is a verbose and detailed conversation between an AI assistant called {bot}, and a human user called {user}. {bot} is intelligent, knowledgeable, wise and polite.
 
 {user}{interface} french revolution what year
 
@@ -133,7 +134,23 @@ if CHAT_LANG == 'English':
 
 {bot}{interface} LHC is a high-energy particle collider, built by CERN, and completed in 2008. They used it to confirm the existence of the Higgs boson in 2012.
 
+'''        
+    else:
+        user = "Bob"
+        bot = "Alice"
+        init_prompt = f'''
+The following is a verbose detailed conversation between {user} and a young girl {bot}. {bot} is intelligent, friendly and cute. {bot} is unlikely to disagree with {user}.
+
+{user}{interface} Hello {bot}, how are you doing?
+
+{bot}{interface} Hi {user}! Thanks, I'm fine. What about you?
+
+{user}{interface} I am very good! It's nice to see you. Would you mind me chatting with you for a while?
+
+{bot}{interface} Not at all! I'm listening.
+
 '''
+
     HELP_MSG = '''Commands:
 say something --> chat with bot. use \\n for new line.
 + --> alternate chat reply
@@ -214,14 +231,15 @@ The following is a verbose and detailed conversation between an AI assistant cal
 # Load Model
 
 print(f'Loading model - {MODEL_NAME}')
-model = RWKV(model=args.MODEL_NAME, dev1=args.DEVICE_1, dtype1=args.DTYPE_1, dev2=args.DEVICE_2, dtype2=args.DTYPE_2, dev1_layers=args.DEVICE_1_NUMBER_OF_LAYERS)
+model = RWKV(model=args.MODEL_NAME, strategy=args.strategy)
+pipeline = PIPELINE(model, "20B_tokenizer.json")
 
 model_tokens = []
 model_state = None
 
 AVOID_REPEAT_TOKENS = []
 for i in AVOID_REPEAT:
-    dd = tokenizer.encode(i)
+    dd = pipeline.encode(i)
     assert len(dd) == 1
     AVOID_REPEAT_TOKENS += dd
 
@@ -234,7 +252,7 @@ def run_rnn(tokens, newline_adj = 0):
     model_tokens += tokens
     out, model_state = model.forward(tokens, model_state)
 
-    # print(f'### model ###\n{tokens}\n[{tokenizer.decode(model_tokens)}]')
+    # print(f'### model ###\n{tokens}\n[{pipeline.decode(model_tokens)}]')
 
     out[0] = -999999999  # disable <|endoftext|>
     out[187] += newline_adj # adjust \n probability
@@ -264,7 +282,7 @@ def load_all_stat(srv, name):
 # Run inference
 print(f'\nRun prompt...')
 
-out = run_rnn(tokenizer.encode(init_prompt))
+out = run_rnn(pipeline.encode(init_prompt))
 save_all_stat('', 'chat_init', out)
 gc.collect()
 torch.cuda.empty_cache()
@@ -282,9 +300,6 @@ def on_message(message):
     srv = 'dummy_server'
 
     msg = message.replace('\\n','\n').strip()
-    # if len(msg) > 1000:
-    #     reply_msg('your message is too long (max 1000 tokens)')
-    #     return
 
     x_temp = GEN_TEMP
     x_top_p = GEN_TOP_P
@@ -316,7 +331,7 @@ def on_message(message):
             # print(f'### prompt ###\n[{new}]')
             model_state = None
             model_tokens = []
-            out = run_rnn(tokenizer.encode(new))
+            out = run_rnn(pipeline.encode(new))
             save_all_stat(srv, 'gen_0', out)
 
         elif msg[:4].lower() == '+qq ':
@@ -324,7 +339,7 @@ def on_message(message):
             # print(f'### prompt ###\n[{new}]')
             model_state = None
             model_tokens = []
-            out = run_rnn(tokenizer.encode(new))
+            out = run_rnn(pipeline.encode(new))
             save_all_stat(srv, 'gen_0', out)
 
         elif msg[:4].lower() == '+qa ':
@@ -334,7 +349,7 @@ def on_message(message):
             new = f"{user}{interface} {real_msg}\n\n{bot}{interface}"
             # print(f'### qa ###\n[{new}]')
             
-            out = run_rnn(tokenizer.encode(new))
+            out = run_rnn(pipeline.encode(new))
             save_all_stat(srv, 'gen_0', out)
 
         elif msg.lower() == '+++':
@@ -353,10 +368,8 @@ def on_message(message):
         begin = len(model_tokens)
         out_last = begin
         for i in range(FREE_GEN_LEN+100):
-            token = tokenizer.sample_logits(
+            token = pipeline.sample_logits(
                 out,
-                model_tokens,
-                args.ctx_len,
                 temperature=x_temp,
                 top_p=x_top_p,
             )
@@ -365,14 +378,14 @@ def on_message(message):
             else:
                 out = run_rnn([token])
             
-            xxx = tokenizer.decode(model_tokens[out_last:])
+            xxx = pipeline.decode(model_tokens[out_last:])
             if '\ufffd' not in xxx: # avoid utf-8 display issues
                 print(xxx, end='', flush=True)
                 out_last = begin + i + 1
                 if i >= FREE_GEN_LEN:
                     break
         print('\n')
-        # send_msg = tokenizer.decode(model_tokens[begin:]).strip()
+        # send_msg = pipeline.decode(model_tokens[begin:]).strip()
         # print(f'### send ###\n[{send_msg}]')
         # reply_msg(send_msg)
         save_all_stat(srv, 'gen_1', out)
@@ -387,7 +400,7 @@ def on_message(message):
             out = load_all_stat(srv, 'chat')
             new = f"{user}{interface} {msg}\n\n{bot}{interface}"
             # print(f'### add ###\n[{new}]')
-            out = run_rnn(tokenizer.encode(new), newline_adj=-999999999)
+            out = run_rnn(pipeline.encode(new), newline_adj=-999999999)
             save_all_stat(srv, 'chat_pre', out)
 
         begin = len(model_tokens)
@@ -402,26 +415,24 @@ def on_message(message):
                 newline_adj = 0
             else:
                 newline_adj = (i - CHAT_LEN_LONG) * 0.25 # MUST END THE GENERATION
-            token = tokenizer.sample_logits(
+            token = pipeline.sample_logits(
                 out,
-                model_tokens,
-                args.ctx_len,
                 temperature=x_temp,
                 top_p=x_top_p,
             )
             out = run_rnn([token], newline_adj=newline_adj)
 
-            xxx = tokenizer.decode(model_tokens[out_last:])
+            xxx = pipeline.decode(model_tokens[out_last:])
             if '\ufffd' not in xxx: # avoid utf-8 display issues
                 print(xxx, end='', flush=True)
                 out_last = begin + i + 1
             
-            send_msg = tokenizer.decode(model_tokens[begin:])
+            send_msg = pipeline.decode(model_tokens[begin:])
             if '\n\n' in send_msg:
                 send_msg = send_msg.strip()
                 break
             
-            # send_msg = tokenizer.decode(model_tokens[begin:]).strip()
+            # send_msg = pipeline.decode(model_tokens[begin:]).strip()
             # if send_msg.endswith(f'{user}{interface}'): # warning: needs to fix state too !!!
             #     send_msg = send_msg[:-len(f'{user}{interface}')].strip()
             #     break
@@ -430,17 +441,16 @@ def on_message(message):
             #     break
 
         # print(f'{model_tokens}')
-        # print(f'[{tokenizer.decode(model_tokens)}]')
+        # print(f'[{pipeline.decode(model_tokens)}]')
 
         # print(f'### send ###\n[{send_msg}]')
         # reply_msg(send_msg)
         save_all_stat(srv, 'chat', out)
 
 print(HELP_MSG)
-print(f'{CHAT_LANG} - {args.DEVICE_1} {args.DTYPE_1} & {args.DEVICE_2} {args.DTYPE_2} (split at {args.DEVICE_1_NUMBER_OF_LAYERS}) - QA_PROMPT {QA_PROMPT}')
-print(f'Ready - {args.MODEL_NAME}')
+print(f'{CHAT_LANG} - {args.MODEL_NAME} - {args.strategy}')
 
-print(f'{tokenizer.decode(model_tokens)}'.replace(f'\n\n{bot}',f'\n{bot}'), end='')
+print(f'{pipeline.decode(model_tokens)}'.replace(f'\n\n{bot}',f'\n{bot}'), end='')
 
 while True:
     msg = prompt(f'{user}{interface} ')
