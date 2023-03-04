@@ -3,6 +3,9 @@
 ########################################################################################################
 
 import os, copy, types, gc, sys
+current_path = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(f'{current_path}/../rwkv_pip_package/src')
+
 import numpy as np
 from prompt_toolkit import prompt
 try:
@@ -12,7 +15,7 @@ except:
 np.set_printoptions(precision=4, suppress=True, linewidth=200)
 args = types.SimpleNamespace()
 
-print('\n\nChatRWKV v2 (!!! WIP, might be buggy !!!) https://github.com/BlinkDL/ChatRWKV')
+print('\n\nChatRWKV v2 https://github.com/BlinkDL/ChatRWKV')
 
 import torch
 torch.backends.cudnn.benchmark = True
@@ -28,8 +31,6 @@ torch.backends.cuda.matmul.allow_tf32 = True
 # torch._C._jit_set_nvfuser_enabled(False)
 
 ########################################################################################################
-#
-# Use '/' in model path, instead of '\'
 #
 # fp16 = good for GPU (!!! DOES NOT support CPU !!!)
 # fp32 = good for CPU
@@ -60,14 +61,12 @@ args.strategy = 'cuda fp16'
 # args.strategy = 'cuda fp16 *0+ -> cpu fp32 *1'
 
 os.environ["RWKV_JIT_ON"] = '1' # '1' or '0', please use torch 1.13+ and benchmark speed
+os.environ["RWKV_CUDA_ON"] = '0' #  '1' : use CUDA kernel for seq mode (much faster)
 
 CHAT_LANG = 'English' # English // Chinese // more to come
 
-QA_PROMPT = False # True: Q & A prompt // False: User & Bot prompt
-# 中文问答设置QA_PROMPT=True（只能问答，问答效果更好，但不能闲聊） 中文聊天设置QA_PROMPT=False（可以闲聊，但需要大模型才适合闲聊）
-
 # Download RWKV-4 models from https://huggingface.co/BlinkDL (don't use Instruct-test models unless you use their prompt templates)
-
+# Use '/' in model path, instead of '\'
 if CHAT_LANG == 'English':
     args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-14b/RWKV-4-Pile-14B-20230213-8019'
     # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-7b/RWKV-4-Pile-7B-20221115-8047'
@@ -80,159 +79,43 @@ if CHAT_LANG == 'English':
 
 elif CHAT_LANG == 'Chinese': # testNovel系列是网文模型，请只用 +gen 指令续写。test4 系列可以问答（只用了小中文语料微调，纯属娱乐）
     args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-7b/RWKV-4-Pile-7B-EngChn-testNovel-441-ctx2048-20230217'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-3b/RWKV-4-Pile-3B-EngChn-testNovel-711-ctx2048-20230216'
-    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-1b5/RWKV-4-Pile-1B5-EngChn-testNovel-671-ctx2048-20230216'
-    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/7-run1z/rwkv-837'
-    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/3-run1z/rwkv-711'
-    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/1.5-run1z/rwkv-2094'
+    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-3b/RWKV-4-Pile-3B-EngChn-testNovel-done-ctx2048-20230226'
+    # args.MODEL_NAME = '/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-1b5/RWKV-4-Pile-1B5-EngChn-testNovel-done-ctx2048-20230225'
+    # args.MODEL_NAME = '/fsx/BlinkDL/CODE/_PUBLIC_/RWKV-LM/RWKV-v4neo/7-run1z/rwkv-1341'
+
+PROMPT_FILE = f'{current_path}/prompt/default/{CHAT_LANG}-2.py' # -1.py for [User & Bot] (Q&A) prompt, -2.py for [Bob & Alice] (chat) prompt
 
 args.ctx_len = 1024
-
 CHAT_LEN_SHORT = 40
 CHAT_LEN_LONG = 150
 FREE_GEN_LEN = 200
 
 GEN_TEMP = 1.0
 GEN_TOP_P = 0.85
-
 AVOID_REPEAT = '，。：？！'
 
 ########################################################################################################
 
-print(f'\n{CHAT_LANG} - {args.strategy} - QA_PROMPT {QA_PROMPT}')
+print(f'\n{CHAT_LANG} - {args.strategy} - {PROMPT_FILE}')
 from rwkv.model import RWKV
 from rwkv.utils import PIPELINE
 
-MODEL_NAME = args.MODEL_NAME
-
-if CHAT_LANG == 'English':
-    interface = ":"
-
-    if QA_PROMPT:
-        user = "User"
-        bot = "Bot" # Or: 'The following is a verbose and detailed Q & A conversation of factual information.'
-        init_prompt = f'''
-The following is a verbose and detailed conversation between an AI assistant called {bot}, and a human user called {user}. {bot} is intelligent, knowledgeable, wise and polite.
-
-{user}{interface} french revolution what year
-
-{bot}{interface} The French Revolution started in 1789, and lasted 10 years until 1799.
-
-{user}{interface} 3+5=?
-
-{bot}{interface} The answer is 8.
-
-{user}{interface} guess i marry who ?
-
-{bot}{interface} Only if you tell me more about yourself - what are your interests?
-
-{user}{interface} solve for a: 9-a=2
-
-{bot}{interface} The answer is a = 7, because 9 - 7 = 2.
-
-{user}{interface} wat is lhc
-
-{bot}{interface} LHC is a high-energy particle collider, built by CERN, and completed in 2008. They used it to confirm the existence of the Higgs boson in 2012.
-
-'''        
-    else:
-        user = "Bob"
-        bot = "Alice"
-        init_prompt = f'''
-The following is a verbose detailed conversation between {user} and a young girl {bot}. {bot} is intelligent, friendly and cute. {bot} is unlikely to disagree with {user}.
-
-{user}{interface} Hello {bot}, how are you doing?
-
-{bot}{interface} Hi {user}! Thanks, I'm fine. What about you?
-
-{user}{interface} I am very good! It's nice to see you. Would you mind me chatting with you for a while?
-
-{bot}{interface} Not at all! I'm listening.
-
-'''
-
-    HELP_MSG = '''Commands:
-say something --> chat with bot. use \\n for new line.
-+ --> alternate chat reply
-+reset --> reset chat
-
-+gen YOUR PROMPT --> free generation with any prompt. use \\n for new line.
-+qa YOUR QUESTION --> free generation - ask any question (just ask the question). use \\n for new line.
-+++ --> continue last free generation (only for +gen / +qa)
-++ --> retry last free generation (only for +gen / +qa)
-
-Now talk with the bot and enjoy. Remember to +reset periodically to clean up the bot's memory. Use RWKV-4 14B for best results.
-This is not instruct-tuned for conversation yet, so don't expect good quality. Better use +gen for free generation.
-
-Prompt is VERY important. Try all prompts on https://github.com/BlinkDL/ChatRWKV first.
-'''
-elif CHAT_LANG == 'Chinese':
-    interface = ":"
-    if QA_PROMPT:
-        user = "Q"
-        bot = "A"
-        init_prompt = f'''
-Expert Questions & Helpful Answers
-
-Ask Research Experts
-
-'''
-    else:
-        user = "User"
-        bot = "Bot"
-        init_prompt = f'''
-The following is a verbose and detailed conversation between an AI assistant called {bot}, and a human user called {user}. {bot} is intelligent, knowledgeable, wise and polite.
-
-{user}{interface} wat is lhc
-
-{bot}{interface} LHC is a high-energy particle collider, built by CERN, and completed in 2008. They used it to confirm the existence of the Higgs boson in 2012.
-
-{user}{interface} 企鹅会飞吗
-
-{bot}{interface} 企鹅是不会飞的。它们的翅膀主要用于游泳和平衡，而不是飞行。
-
-'''
-    HELP_MSG = f'''指令:
-
-直接输入内容 --> 和机器人聊天（建议问机器人问题），用\\n代表换行
-+ --> 让机器人换个回答
-+reset --> 重置对话
-
-+gen 某某内容 --> 续写任何中英文内容，用\\n代表换行
-+qa 某某问题 --> 问独立的问题（忽略上下文），用\\n代表换行
-+qq 某某问题 --> 问独立的问题（忽略上下文），且敞开想象力，用\\n代表换行
-+++ --> 继续 +gen / +qa / +qq 的回答
-++ --> 换个 +gen / +qa / +qq 的回答
-
-作者：彭博 请关注我的知乎: https://zhuanlan.zhihu.com/p/603840957
-
-如果喜欢，请看我们的优质护眼灯: https://withablink.taobao.com
-
-现在可以输入内容和机器人聊天（注意它不大懂中文，它更懂英文）。请经常使用 +reset 重置机器人记忆。
-目前没有“重复惩罚”，所以机器人有时会重复，此时必须使用 + 换成正常回答，以免污染电脑记忆。
-注意：和上下文无关的独立问题，必须用 +qa 或 +qq 问，以免污染电脑记忆。
-
-请先试下列咒语，理解咒语的写法。咒语至关重要。
-
-中文网文【testNovel】模型，试下面这些，注意，必须是【testNovel】模型：
-+gen 这是一颗
-+gen 以下是不朽的科幻史诗长篇巨著，描写细腻，刻画了数百位个性鲜明的英雄和宏大的星际文明战争。\\n第一章
-+gen 这是一个修真世界，详细世界设定如下：\\n1.
-
-中文问答【test数字】模型，试下面这些，注意，必须是【test数字】模型：
-+gen \\n活动出席发言稿：\\n大家好，
-+gen \\n怎样创立一家快速盈利的AI公司：\\n1.
-+gen \\nimport torch
-+qq 请以《我的驴》为题写一篇作文
-+qq 请以《企鹅》为题写一首诗歌
-+qq 请设定一个奇幻世界，告诉我详细的世界设定。
-'''
+with open(PROMPT_FILE, 'rb') as file:
+    user = None
+    bot = None
+    interface = None
+    init_prompt = None
+    exec(compile(file.read(), PROMPT_FILE, 'exec'))
+init_prompt = init_prompt.strip().split('\n')
+for c in range(len(init_prompt)):
+    init_prompt[c] = init_prompt[c].strip().strip('\u3000').strip('\r')
+init_prompt = '\n' + ('\n'.join(init_prompt)).strip() + '\n\n'
 
 # Load Model
 
-print(f'Loading model - {MODEL_NAME}')
+print(f'Loading model - {args.MODEL_NAME}')
 model = RWKV(model=args.MODEL_NAME, strategy=args.strategy)
-pipeline = PIPELINE(model, "20B_tokenizer.json")
+pipeline = PIPELINE(model, f"{current_path}/20B_tokenizer.json")
 
 model_tokens = []
 model_state = None
@@ -447,10 +330,51 @@ def on_message(message):
         # reply_msg(send_msg)
         save_all_stat(srv, 'chat', out)
 
+########################################################################################################
+
+if CHAT_LANG == 'English':
+    HELP_MSG = '''Commands:
+say something --> chat with bot. use \\n for new line.
++ --> alternate chat reply
++reset --> reset chat
+
++gen YOUR PROMPT --> free generation with any prompt. use \\n for new line.
++qa YOUR QUESTION --> free generation - ask any question (just ask the question). use \\n for new line.
++++ --> continue last free generation (only for +gen / +qa)
+++ --> retry last free generation (only for +gen / +qa)
+
+Now talk with the bot and enjoy. Remember to +reset periodically to clean up the bot's memory. Use RWKV-4 14B for best results.
+This is not instruct-tuned for conversation yet, so don't expect good quality. Better use +gen for free generation.
+
+Prompt is VERY important. Try all prompts on https://github.com/BlinkDL/ChatRWKV first.
+'''
+elif CHAT_LANG == 'Chinese':        
+    HELP_MSG = f'''指令:
+直接输入内容 --> 和机器人聊天（建议问机器人问题），用\\n代表换行
++ --> 让机器人换个回答
++reset --> 重置对话，请经常使用 +reset 重置机器人记忆
++qa 某某问题 --> 问独立的问题（忽略上下文），用\\n代表换行
++qq 某某问题 --> 问独立的问题（忽略上下文），且敞开想象力，用\\n代表换行
+
+注意，中文网文【testNovel】模型，更适合下列指令：
++gen 某某内容 --> 续写任何中英文内容，用\\n代表换行
++++ --> 继续 +gen / +qa / +qq 的回答
+++ --> 换个 +gen / +qa / +qq 的回答
+
+作者：彭博 请关注我的知乎: https://zhuanlan.zhihu.com/p/603840957
+如果喜欢，请看我们的优质护眼灯: https://withablink.taobao.com
+
+中文网文【testNovel】模型，请先试这些续写例子：
++gen “区区
++gen 以下是不朽的科幻史诗长篇巨著，描写细腻，刻画了数百位个性鲜明的英雄和宏大的星际文明战争。\\n第一章
++gen 这是一个修真世界，详细世界设定如下：\\n1.
+'''
 print(HELP_MSG)
 print(f'{CHAT_LANG} - {args.MODEL_NAME} - {args.strategy}')
 
 print(f'{pipeline.decode(model_tokens)}'.replace(f'\n\n{bot}',f'\n{bot}'), end='')
+
+########################################################################################################
 
 while True:
     msg = prompt(f'{user}{interface} ')

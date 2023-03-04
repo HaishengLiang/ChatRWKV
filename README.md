@@ -1,10 +1,13 @@
 # ChatRWKV
-ChatRWKV is like ChatGPT but powered by my RWKV (100% RNN) language model, which is the only RNN (as of now) that can match transformers in quality and scaling, while being faster and saves VRAM. Training sponsored by Stability EleutherAI :)
+ChatRWKV is like ChatGPT but powered by my RWKV (100% RNN) language model, which is the only RNN (as of now) that can match transformers in quality and scaling, while being faster and saves VRAM. Training sponsored by Stability EleutherAI :) **中文使用教程，请往下看，在本页面底部。**
 
-**ChatRWKV v2:** with "stream" and "split" strategies. **3G VRAM is enough to run RWKV 14B :)** https://github.com/BlinkDL/ChatRWKV/tree/main/v2
-```
+**RWKV pip package**: https://pypi.org/project/rwkv/
+
+ChatRWKV v2: with "stream" and "split" strategies. 3G VRAM is enough to run RWKV 14B :) https://github.com/BlinkDL/ChatRWKV/tree/main/v2
+```python
 os.environ["RWKV_JIT_ON"] = '1'
-from rwkv.model import RWKV                         # everything in /v2/rwkv folder
+os.environ["RWKV_CUDA_ON"] = '0' # if '1' then use CUDA kernel for seq mode (much faster)
+from rwkv.model import RWKV                         # pip install rwkv
 model = RWKV(model='/fsx/BlinkDL/HF-MODEL/rwkv-4-pile-1b5/RWKV-4-Pile-1B5-20220903-8040', strategy='cuda fp16')
 
 out, state = model.forward([187, 510, 1563, 310, 247], None)   # use 20B_tokenizer.json
@@ -22,15 +25,19 @@ print(out.detach().cpu().numpy())                   # same result as above
 
 **Twitter:** https://twitter.com/BlinkDL_AI
 
-Demo: https://huggingface.co/spaces/yahma/rwkv-14b
+**RWKV in 150 lines** (model, inference, text generation): https://github.com/BlinkDL/ChatRWKV/blob/main/RWKV_in_150_lines.py
+
+**Hugging Face space**: https://huggingface.co/spaces/BlinkDL/ChatRWKV-gradio
 
 Cool Community RWKV Projects:
 
-https://pypi.org/project/rwkvstic/ Easy pip package (with 8bit & offload for low VRAM GPUs)
+https://pypi.org/project/rwkvstic/ pip package (with 8bit & offload for low VRAM GPUs)
 
 https://github.com/gururise/rwkv_gradio RWKV Gradio
 
 https://github.com/hizkifw/WebChatRWKVstic WebUI (WIP)
+
+https://github.com/cryscan/eloise RWKV QQ bot
 
 ![RWKV-eval](RWKV-eval.png)
 
@@ -73,25 +80,13 @@ Other examples:
 ![ChatRWKV](misc/sample-5.png)
 ![ChatRWKV](misc/sample-6.png)
 ![ChatRWKV](misc/sample-7.png)
+![ChatRWKV](ChatRWKV.png)
 
 ## 中文模型
 
-QQ群 143626394（加入时请简单自我介绍）（马上满了，新人加二群 553456870）。有研发能力的朋友加群 325154699。
+QQ群 553456870（加入时请简单自我介绍）。有研发能力的朋友加群 325154699。
 
-在 chat.py 修改 CHAT_LANG 为 Chinese，修改 MODEL_NAME 为你下载的模型路径。
-
-必须下载双语模型（EngChn），选最新的，目前最新是 test4 系列。**最新推出 testNovel 系列网文模型，适合 +gen 写网文。**
-
-大模型：7B 参数，需 14G 显存，效果好（以后可以优化显存占用和速度，但现在忙）：
-https://huggingface.co/BlinkDL/rwkv-4-pile-7b/tree/main
-
-中模型：3B 参数，需 6G 显存，效果中等：
-https://huggingface.co/BlinkDL/rwkv-4-pile-3b/tree/main
-
-小模型：1.5B 参数 ，需 3G 显存，效果差些：
-https://huggingface.co/BlinkDL/rwkv-4-pile-1b5/tree/main
-
-如果没显卡，或者显存不够，可以用 cpu 模式（很慢）。
+中文使用教程：https://zhuanlan.zhihu.com/p/609154637
 
 咒语非常重要。试试这些咒语（注意这些咒语都会忽略聊天内容！都应该用于问独立的问题！）：
 ```
@@ -121,8 +116,6 @@ https://huggingface.co/BlinkDL/rwkv-4-pile-1b5/tree/main
 +qa 猫会编程吗？
 +qa 知乎大V有哪些特点？
 ```
-
-![ChatRWKV](ChatRWKV.png)
 
 ## Star History
 
