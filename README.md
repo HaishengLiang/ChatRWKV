@@ -3,7 +3,19 @@ ChatRWKV is like ChatGPT but powered by my RWKV (100% RNN) language model, which
 
 **RWKV pip package**: https://pypi.org/project/rwkv/
 
-ChatRWKV v2: with "stream" and "split" strategies. 3G VRAM is enough to run RWKV 14B :) https://github.com/BlinkDL/ChatRWKV/tree/main/v2
+**Download RWKV-4 weights:** https://huggingface.co/BlinkDL (**Use RWKV-4 models**. DO NOT use RWKV-4a and RWKV-4b models.)
+
+**RWKV LM:** https://github.com/BlinkDL/RWKV-LM (explanation, fine-tuning, training, etc.)
+
+## RWKV Discord: https://discord.gg/bDSBUMeFpc (let's build together)
+
+**Twitter:** https://twitter.com/BlinkDL_AI
+
+**RWKV in 150 lines** (model, inference, text generation): https://github.com/BlinkDL/ChatRWKV/blob/main/RWKV_in_150_lines.py
+
+**Hugging Face space**: https://huggingface.co/spaces/BlinkDL/ChatRWKV-gradio
+
+ChatRWKV v2: with "stream" and "split" strategies, and INT8. 3G VRAM is enough to run RWKV 14B :) https://github.com/BlinkDL/ChatRWKV/tree/main/v2
 ```python
 os.environ["RWKV_JIT_ON"] = '1'
 os.environ["RWKV_CUDA_ON"] = '0' # if '1' then use CUDA kernel for seq mode (much faster)
@@ -17,17 +29,8 @@ out, state = model.forward([1563], state)           # RNN has state (use deepcop
 out, state = model.forward([310, 247], state)
 print(out.detach().cpu().numpy())                   # same result as above
 ```
-**Download RWKV-4 weights:** https://huggingface.co/BlinkDL (**Use RWKV-4 models**. DO NOT use RWKV-4a and RWKV-4b models.)
 
-**RWKV LM:** https://github.com/BlinkDL/RWKV-LM (explanation, fine-tuning, training, etc.)
-
-**RWKV Discord:** https://discord.gg/bDSBUMeFpc (let's build together)
-
-**Twitter:** https://twitter.com/BlinkDL_AI
-
-**RWKV in 150 lines** (model, inference, text generation): https://github.com/BlinkDL/ChatRWKV/blob/main/RWKV_in_150_lines.py
-
-**Hugging Face space**: https://huggingface.co/spaces/BlinkDL/ChatRWKV-gradio
+![ChatRWKV](ChatRWKV.png)
 
 Cool Community RWKV Projects:
 
@@ -41,9 +44,7 @@ https://github.com/cryscan/eloise RWKV QQ bot
 
 ![RWKV-eval](RWKV-eval.png)
 
-It is not instruct-tuned for conversation yet, so don't directly ask it to do stuffs (unless it's a simple question).
-
-For "Instruct-test1" RWKV-4 models (available in 1B5/3B/7B https://huggingface.co/BlinkDL, check https://huggingface.co/datasets/bigscience/xP3all/viewer/en/train for prompt examples):
+It is not instruct-tuned, so don't directly ask it to do stuffs (unless it's a simple question).
 
 ```+gen \nQ: prompt\n\nA:```
 
@@ -57,7 +58,7 @@ For all RWKV-4 models, some great Q&A prompts:
 
 Other examples:
 
-```+gen Here is a short story in which Jeff Bezos, Elon Musk, and Bill Gates fight in a tournament:```
+```+gen Here's a short cyberpunk sci-fi adventure story. The story's main character is an artificial human created by a company called OpenBot.\n\nThe Story:```
 
 ```+gen Here is a Python function that generates string of words that would confuse LLMs:```
 
@@ -80,7 +81,6 @@ Other examples:
 ![ChatRWKV](misc/sample-5.png)
 ![ChatRWKV](misc/sample-6.png)
 ![ChatRWKV](misc/sample-7.png)
-![ChatRWKV](ChatRWKV.png)
 
 ## 中文模型
 
