@@ -1,7 +1,9 @@
 # ChatRWKV
 ChatRWKV is like ChatGPT but powered by my RWKV (100% RNN) language model, which is the only RNN (as of now) that can match transformers in quality and scaling, while being faster and saves VRAM. Training sponsored by Stability EleutherAI :) **中文使用教程，请往下看，在本页面底部。**
 
-**RWKV pip package**: https://pypi.org/project/rwkv/
+**RWKV pip package**: https://pypi.org/project/rwkv/ **(pls always check for latest version and upgrade)**
+
+Update ChatRWKV v2 & pip rwkv package (0.5.0) and set os.environ["RWKV_CUDA_ON"] = '1' for 1.5x speed f16i8 (and 10% less VRAM, now 14686MB for 14B instead of 16462MB  - use it to put more layers on GPU).
 
 **Download RWKV-4 weights:** https://huggingface.co/BlinkDL (**Use RWKV-4 models**. DO NOT use RWKV-4a and RWKV-4b models.)
 
@@ -29,6 +31,7 @@ out, state = model.forward([1563], state)           # RNN has state (use deepcop
 out, state = model.forward([310, 247], state)
 print(out.detach().cpu().numpy())                   # same result as above
 ```
+![RWKV-eval](RWKV-eval.png)
 
 ![ChatRWKV](ChatRWKV.png)
 
@@ -41,8 +44,6 @@ https://github.com/gururise/rwkv_gradio RWKV Gradio
 https://github.com/hizkifw/WebChatRWKVstic WebUI (WIP)
 
 https://github.com/cryscan/eloise RWKV QQ bot
-
-![RWKV-eval](RWKV-eval.png)
 
 It is not instruct-tuned, so don't directly ask it to do stuffs (unless it's a simple question).
 
